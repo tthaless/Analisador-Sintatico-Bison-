@@ -83,7 +83,23 @@ atribuicao
     ;
 
 expressao
-    : NUM_INT
+    : expressao PLUS expressao
+    | expressao MINUS expressao
+    | expressao MULT expressao
+    | expressao DIV expressao
+    | expressao MOD expressao
+    | expressao AND expressao
+    | expressao OR expressao
+    | expressao EQ expressao
+    | expressao NE expressao
+    | expressao LT expressao
+    | expressao LE expressao
+    | expressao GT expressao
+    | expressao GE expressao
+    | NOT expressao
+    | MINUS expressao %prec UMINUS  /* Garante que o unário negativo tenha a precedência correta */
+    | LPAREN expressao RPAREN
+    | NUM_INT
     | NUM_DEC
     | ID
     ;
