@@ -7,6 +7,10 @@
 #define MAX_SYMBOLS 4096
 #define MAX_CHAR 64
 
+/* Desativa os warnings gerados pelo codigo automatico do Flex */
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-label"
+
 int coluna = 1;
 int coluna_inicial = 1;
 
@@ -71,6 +75,8 @@ OTHER           .
 
 %option noyywrap
 %option yylineno
+%option nounput
+%option noinput
 
 %%
 
