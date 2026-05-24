@@ -10,7 +10,11 @@
 int coluna = 1;
 int coluna_inicial = 1;
 
+<<<<<<< HEAD
 /* Atualiza a contagem de colunas antes de cada acao */
+=======
+ /* Atualiza a contagem de colunas antes de cada acao */
+>>>>>>> 54cbe08e3624f93925609836b46bc4ff3692160d
 #define YY_USER_ACTION { coluna_inicial = coluna; coluna += yyleng; }
 
  /* Estrutura da Tabela de Simbolos */
