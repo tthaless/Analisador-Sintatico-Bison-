@@ -36,6 +36,9 @@ int yylex(void);
 %right NOT
 %right UMINUS
 
+%nonassoc LOWER_THAN_ELSE
+%nonassoc ELSE
+
 %start programa
 
 %%
@@ -52,7 +55,24 @@ lista_comandos
 comando
     : declaracao SEMICOLON
     | atribuicao SEMICOLON
+    | comando_if
+    | comando_while
+    | bloco
     | error SEMICOLON       { yyerrok; }
+    ;
+
+bloco
+    : LBRACE lista_comandos RBRACE
+    | LBRACE RBRACE
+    ;
+
+comando_if
+    : IF LPAREN expressao RPAREN comando %prec LOWER_THAN_ELSE /* Força o bison a associar o else ao if mais próximo (solução para dangling else) */
+    | IF LPAREN expressao RPAREN comando ELSE comando
+    ;
+
+comando_while
+    : WHILE LPAREN expressao RPAREN comando
     ;
 
  /* Tipos suportados pela linguagem */
