@@ -4,16 +4,16 @@ comentário inútil
 
 int a;  
 int b, c;
-bool flag;
-bool ativo, concluido;  
+int flag;
+int ativo, concluido;  
 
 int z  
 
 a = 5;
 b = a;
 c = a + b * 3;
-flag = true;
-ativo = false;
+flag = 1;
+ativo = 0;
 concluido = ativo;
 
 int w,;  
@@ -34,10 +34,13 @@ flag = a != b;
 if (a < b 
     c = 1;  
 
-flag = true && false;
+flag = 1 && 0;
 flag = (a < b) || (c == a);
 flag = !flag;
 flag = !(a >= b && c != a);
+
+if (a >= 10 && a <= 20 || !(c == 5))
+    a = a + 1;
 
 while ()    
     a = a + 1;
@@ -81,7 +84,7 @@ read(b);
     y = 20;
     print(x);
     print(y);
-}         
+}        
 
 else    
     a = 1;
