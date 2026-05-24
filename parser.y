@@ -6,9 +6,9 @@
  /* Variaveis de posicao declaradas no lexico.l */
 extern int yylineno;
 extern int coluna_inicial;
+
  /* Funcao da tabela de simbolos declarada no lexico.l */
 extern void imprimir_tabela();
-
 extern FILE *yyin;
 
 void yyerror(const char *s);
@@ -16,6 +16,7 @@ int yylex(void);
 %}
 
  /* Tokens */
+
 %token INT FLOAT
 %token ID NUM_INT NUM_DEC
 %token IF ELSE WHILE READ PRINT RETURN
@@ -26,6 +27,7 @@ int yylex(void);
 %token LPAREN RPAREN LBRACE RBRACE COMMA SEMICOLON
 
  /* Precedencia e Associatividade */
+
 %left OR
 %left AND
 %left EQ NE
@@ -33,14 +35,17 @@ int yylex(void);
 %left PLUS MINUS
 %left MULT DIV MOD
 %right NOT
-%right UMINUS
+%right UMINUS /* Precedencia maxima para o operador de inversao de sinal (-) */
 
+ /* Regras de precedencia ficticias para resolver o conflito Shift/Reduce do 'Dangling Else' */
 %nonassoc LOWER_THAN_ELSE
 %nonassoc ELSE
 
 %start programa
 
 %%
+
+ /* Regras da Gramatica (Producao) */
 
 programa
     : lista_comandos
@@ -62,7 +67,7 @@ comando
     | io_stmt
     | chamada_func SEMICOLON
     | RETURN expressao SEMICOLON
-    | error SEMICOLON       { yyerrok; }
+    | error SEMICOLON       { yyerrok; } /* Recuperacao de Erro (Panic Mode) */
     ;
 
 bloco
@@ -71,6 +76,7 @@ bloco
     ;
 
 comando_if
+ /* Resolve a ambiguidade do Dangling Else */
     : IF LPAREN expressao RPAREN comando %prec LOWER_THAN_ELSE
     | IF LPAREN expressao RPAREN comando ELSE comando
     ;
@@ -120,7 +126,7 @@ expressao
     | expressao GT expressao
     | expressao GE expressao
     | NOT expressao
-    | MINUS expressao %prec UMINUS
+    | MINUS expressao %prec UMINUS /* Forca a precedencia do menos unario */
     | LPAREN expressao RPAREN
     | NUM_INT
     | NUM_DEC
@@ -128,7 +134,7 @@ expressao
     | chamada_func
     ;
 
- /* --- REGRAS DE FUNCOES E I/O --- */
+ /* Regras de Funcoes e I/O */
 
 parametros
     : parametro
@@ -155,6 +161,8 @@ io_stmt
     ;
 
 %%
+
+ /* Funcoes Auxiliares em C */
 
  /* Relato de erros sintaticos com posicao */
 void yyerror(const char *s) {
