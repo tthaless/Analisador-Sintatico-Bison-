@@ -1,0 +1,36 @@
+// Declaracao global
+int limite = 50;
+
+// Funcao de soma com parametros
+int somar(int a, int b) {
+    int resultado;
+    resultado = a + b;
+    return resultado;
+}
+
+// Funcao principal
+int main() {
+    int x, y, iterador;
+
+    // Teste de I/O
+    read(x);
+    read(y);
+    print(100);
+
+    // Chamada de funcao
+    x = somar(x, y);
+
+    // Condicionais e Operadores
+    if (x > limite && y != 0) {
+        print(x);
+    } else {
+        print(0);
+    }
+
+    // Repeticao
+    iterador = 0;
+    while (iterador < 10) {
+        iterador = iterador + 1;
+        print(iterador);
+    }
+}
