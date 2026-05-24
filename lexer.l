@@ -6,45 +6,80 @@
 
 #define MAX_SYMBOLS 4096
 #define MAX_CHAR 64
+#define HASH_SIZE 1024
 
-/* Desativa os warnings gerados pelo codigo automatico do Flex */
+ /* Desativa os warnings gerados pelo codigo automatico do Flex */
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-label"
 
 int coluna = 1;
 int coluna_inicial = 1;
 
-/* Atualiza a contagem de colunas antes de cada acao */
-
  /* Atualiza a contagem de colunas antes de cada acao */
 
 #define YY_USER_ACTION { coluna_inicial = coluna; coluna += yyleng; }
 
  /* Estrutura da Tabela de Simbolos */
-typedef struct {
+typedef struct Simbolo {
     char nome[MAX_CHAR];
     int primeira_linha;
     int primeira_coluna;
+
+    /* Proximo simbolo da lista encadeada */
+    struct Simbolo *prox;
 } Simbolo;
 
-Simbolo tabela[MAX_SYMBOLS];
+ /* Tabela hash */
+Simbolo *tabela_hash[HASH_SIZE] = {NULL};
 int num_simbolos = 0;
 
+unsigned int hash(const char *str) {
+    unsigned int h = 0;
+
+    while (*str) {
+        h = (h * 31) + *str;
+        str++;
+    }
+
+    return h % HASH_SIZE;
+}
+
  /* Funcao para a insercao de ID na tabela */
-int inserir_simbolo(const char *nome, int linha, int col) {
-    for (int i = 0; i < num_simbolos; i++) {
-        if (strcmp(tabela[i].nome, nome) == 0) {
-            return i;
+ int inserir_simbolo(const char *nome, int linha, int col) {
+
+    unsigned int indice = hash(nome);
+
+    /* procura se ja existe */
+    Simbolo *atual = tabela_hash[indice];
+
+    while (atual != NULL) {
+        if (strcmp(atual->nome, nome) == 0) {
+            return 1; /* ja existe */
         }
+
+        atual = atual->prox;
     }
-    if (num_simbolos < MAX_SYMBOLS) {
-        strncpy(tabela[num_simbolos].nome, nome, MAX_CHAR - 1);
-        tabela[num_simbolos].nome[MAX_CHAR - 1] = '\0';
-        tabela[num_simbolos].primeira_linha = linha;
-        tabela[num_simbolos].primeira_coluna = col;
-        return num_simbolos++;
+
+    /* cria novo simbolo */
+    Simbolo *novo = malloc(sizeof(Simbolo));
+
+    if (!novo) {
+        return -1;
     }
-    return -1;
+
+    strncpy(novo->nome, nome, MAX_CHAR - 1);
+    novo->nome[MAX_CHAR - 1] = '\0';
+
+    novo->primeira_linha = linha;
+    novo->primeira_coluna = col;
+
+    /* insercao no inicio da lista */
+    novo->prox = tabela_hash[indice];
+    tabela_hash[indice] = novo;
+
+    num_simbolos++;
+
+    return 0;
 }
 
  /* Funcao para impressao da Tabela de Simbolos */
@@ -52,11 +87,19 @@ void imprimir_tabela() {
     printf("\n=== TABELA DE SIMBOLOS ===\n");
     printf("%-20s %-9s %-9s\n", "Identificador", "Linha", "Coluna");
     printf("------------------------------------------------\n");
-    for (int i = 0; i < num_simbolos; i++) {
-        printf("%-20s %-9d %-9d\n",
-               tabela[i].nome,
-               tabela[i].primeira_linha,
-               tabela[i].primeira_coluna);
+    for (int i = 0; i < HASH_SIZE; i++) {
+
+        Simbolo *atual = tabela_hash[i];
+
+        while (atual != NULL) {
+
+            printf("%-20s %-9d %-9d\n",
+                atual->nome,
+                atual->primeira_linha,
+                atual->primeira_coluna);
+
+            atual = atual->prox;
+        }
     }
 }
 
@@ -80,8 +123,7 @@ OTHER           .
 
 %%
 
-{WS}            ;
- /* Ignora espacos e tabs */
+{WS}            ; /* Ignora espacos e tabs */
 {LINE_COMMENT}  ; /* Comentario de linha unica */
 {NEWLINE}       { coluna = 1; }
 
