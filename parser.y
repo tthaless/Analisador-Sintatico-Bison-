@@ -6,7 +6,6 @@
  /* Variaveis de posicao declaradas no lexico.l */
 extern int yylineno;
 extern int coluna_inicial;
-
  /* Funcao da tabela de simbolos declarada no lexico.l */
 extern void imprimir_tabela();
 
@@ -19,7 +18,7 @@ int yylex(void);
  /* Tokens */
 %token INT FLOAT
 %token ID NUM_INT NUM_DEC
-%token IF ELSE WHILE READ PRINT
+%token IF ELSE WHILE READ PRINT RETURN
 %token PLUS MINUS MULT DIV MOD
 %token AND OR NOT
 %token EQ NE LT LE GT GE
@@ -54,10 +53,15 @@ lista_comandos
 
 comando
     : declaracao SEMICOLON
+    | tipo ID LPAREN parametros RPAREN bloco
+    | tipo ID LPAREN RPAREN bloco
     | atribuicao SEMICOLON
     | comando_if
     | comando_while
     | bloco
+    | io_stmt
+    | chamada_func SEMICOLON
+    | RETURN expressao SEMICOLON
     | error SEMICOLON       { yyerrok; }
     ;
 
@@ -67,7 +71,7 @@ bloco
     ;
 
 comando_if
-    : IF LPAREN expressao RPAREN comando %prec LOWER_THAN_ELSE /* Força o bison a associar o else ao if mais próximo (solução para dangling else) */
+    : IF LPAREN expressao RPAREN comando %prec LOWER_THAN_ELSE
     | IF LPAREN expressao RPAREN comando ELSE comando
     ;
 
@@ -81,8 +85,7 @@ tipo
     | FLOAT
     ;
 
- /* Declaracao de variaveis
-    e inicializacao opcional: int x; int x, y; int x = 10; float f = 2.5; */
+ /* Declaracao de variaveis apenas */
 declaracao
     : tipo lista_decl_itens
     ;
@@ -117,17 +120,43 @@ expressao
     | expressao GT expressao
     | expressao GE expressao
     | NOT expressao
-    | MINUS expressao %prec UMINUS  /* Garante que o unário negativo tenha a precedência correta */
+    | MINUS expressao %prec UMINUS
     | LPAREN expressao RPAREN
     | NUM_INT
     | NUM_DEC
     | ID
+    | chamada_func
+    ;
+
+ /* --- REGRAS DE FUNCOES E I/O --- */
+
+parametros
+    : parametro
+    | parametros COMMA parametro
+    ;
+
+parametro
+    : tipo ID
+    ;
+
+chamada_func
+    : ID LPAREN argumentos RPAREN
+    | ID LPAREN RPAREN
+    ;
+
+argumentos
+    : expressao
+    | argumentos COMMA expressao
+    ;
+
+io_stmt
+    : PRINT LPAREN expressao RPAREN SEMICOLON
+    | READ LPAREN ID RPAREN SEMICOLON
     ;
 
 %%
 
- /* Relato de erros sintaticos com posicao
-    Usa coluna_inicial pois o Flex ja avancou alem do token no momento do erro */
+ /* Relato de erros sintaticos com posicao */
 void yyerror(const char *s) {
     fprintf(stderr, "ERRO SINTATICO: %s na Linha %d, Coluna %d\n",
             s, yylineno, coluna_inicial);
