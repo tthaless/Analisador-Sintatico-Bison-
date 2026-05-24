@@ -1,36 +1,87 @@
-// Declaracao global
-int limite = 50;
+/*
+comentário inútil
+*/
 
-// Funcao de soma com parametros
-int somar(int a, int b) {
-    int resultado;
-    resultado = a + b;
-    return resultado;
+int a;  
+int b, c;
+bool flag;
+bool ativo, concluido;  
+
+int z  
+
+a = 5;
+b = a;
+c = a + b * 3;
+flag = true;
+ativo = false;
+concluido = ativo;
+
+int w,;  
+
+a = 3 + 2 * 5;
+b = (a + 1) * 4 - 2;
+c = -a + (b - -c) / 2;
+
+a = ;
+
+flag = a < b;
+flag = a <= b;
+flag = a > b;
+flag = a >= b;
+flag = a == b;
+flag = a != b;
+
+if (a < b 
+    c = 1;  
+
+flag = true && false;
+flag = (a < b) || (c == a);
+flag = !flag;
+flag = !(a >= b && c != a);
+
+while ()    
+    a = a + 1;
+
+@
+
+int S = -2;
+P = -0;
+
+if (a < b)
+    a = b;
+
+if (a == b)
+    c = 1;
+else
+    c = 2;
+
+a = 5 +* 2;  
+
+//dangling else
+if (a < b)
+    if (b < c)
+        a = b;
+    else
+        c = a;
+
+while (a < 10)
+    a = a + 1;
+
+while (a < 20) {
+    a = a + 1;
+    print(a);
 }
 
-// Funcao principal
-int main() {
-    int x, y, iterador;
+print(a);
+read(b);
 
-    // Teste de I/O
-    read(x);
-    read(y);
-    print(100);
+{
+    int x, y;  
+    x = 10;
+    y = 20;
+    print(x);
+    print(y);
+}         
 
-    // Chamada de funcao
-    x = somar(x, y);
-
-    // Condicionais e Operadores
-    if (x > limite && y != 0) {
-        print(x);
-    } else {
-        print(0);
-    }
-
-    // Repeticao
-    iterador = 0;
-    while (iterador < 10) {
-        iterador = iterador + 1;
-        print(iterador);
-    }
-}
+else    
+    a = 1;
