@@ -34,12 +34,12 @@ int yylex(void);
 %left LT LE GT GE
 %left PLUS MINUS
 %left MULT DIV MOD
-%right NOT
-%right UMINUS /* Precedencia maxima para o operador de inversao de sinal (-) */
+%precedence NOT
+%precedence UMINUS /* Precedencia maxima para o operador de inversao de sinal (-) */
 
  /* Regras de precedencia ficticias para resolver o conflito Shift/Reduce do 'Dangling Else' */
-%nonassoc LOWER_THAN_ELSE
-%nonassoc ELSE
+%precedence LOWER_THAN_ELSE
+%precedence ELSE
 
 %start programa
 
