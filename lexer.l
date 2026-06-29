@@ -4,105 +4,13 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_SYMBOLS 4096
-#define MAX_CHAR 64
-#define HASH_SIZE 1024
-
- /* Desativa os warnings gerados pelo codigo automatico do Flex */
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-label"
 
 int coluna = 1;
 int coluna_inicial = 1;
 
- /* Atualiza a contagem de colunas antes de cada acao */
-
 #define YY_USER_ACTION { coluna_inicial = coluna; coluna += yyleng; }
-
- /* Estrutura da Tabela de Simbolos */
-typedef struct Simbolo {
-    char nome[MAX_CHAR];
-    int primeira_linha;
-    int primeira_coluna;
-
-    /* Proximo simbolo da lista encadeada */
-    struct Simbolo *prox;
-} Simbolo;
-
- /* Tabela hash */
-Simbolo *tabela_hash[HASH_SIZE] = {NULL};
-int num_simbolos = 0;
-
-unsigned int hash(const char *str) {
-    unsigned int h = 0;
-
-    while (*str) {
-        h = (h * 31) + *str;
-        str++;
-    }
-
-    return h % HASH_SIZE;
-}
-
- /* Funcao para a insercao de ID na tabela */
- int inserir_simbolo(const char *nome, int linha, int col) {
-
-    unsigned int indice = hash(nome);
-
-    /* procura se ja existe */
-    Simbolo *atual = tabela_hash[indice];
-
-    while (atual != NULL) {
-        if (strcmp(atual->nome, nome) == 0) {
-            return 1; /* ja existe */
-        }
-
-        atual = atual->prox;
-    }
-
-    /* cria novo simbolo */
-    Simbolo *novo = malloc(sizeof(Simbolo));
-
-    if (!novo) {
-        return -1;
-    }
-
-    strncpy(novo->nome, nome, MAX_CHAR - 1);
-    novo->nome[MAX_CHAR - 1] = '\0';
-
-    novo->primeira_linha = linha;
-    novo->primeira_coluna = col;
-
-    /* insercao no inicio da lista */
-    novo->prox = tabela_hash[indice];
-    tabela_hash[indice] = novo;
-
-    num_simbolos++;
-
-    return 0;
-}
-
- /* Funcao para impressao da Tabela de Simbolos */
-void imprimir_tabela() {
-    printf("\n=== TABELA DE SIMBOLOS ===\n");
-    printf("%-20s %-9s %-9s\n", "Identificador", "Linha", "Coluna");
-    printf("------------------------------------------------\n");
-    for (int i = 0; i < HASH_SIZE; i++) {
-
-        Simbolo *atual = tabela_hash[i];
-
-        while (atual != NULL) {
-
-            printf("%-20s %-9d %-9d\n",
-                atual->nome,
-                atual->primeira_linha,
-                atual->primeira_coluna);
-
-            atual = atual->prox;
-        }
-    }
-}
-
 %}
 
  /* Definicoes Regulares */
@@ -141,13 +49,14 @@ OTHER           .
 
  /* Identificadores */
 {ID}            {
-                    inserir_simbolo(yytext, yylineno, coluna_inicial);
+                    strcpy(yylval.str, yytext);
                     return ID;
                 }
 
  /* Constantes Numericas */
-{DECIMAL}       { return NUM_DEC; }
-{INTEIRO}       { return NUM_INT; }
+/* Constantes Numericas */
+{DECIMAL}       { strcpy(yylval.str, yytext); return NUM_DEC; }
+{INTEIRO}       { strcpy(yylval.str, yytext); return NUM_INT; }
 
  /* Operadores Aritmeticos */
 "="             { return ASSIGN; }

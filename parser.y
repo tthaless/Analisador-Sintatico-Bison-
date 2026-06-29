@@ -3,22 +3,67 @@
 #include <stdlib.h>
 #include <string.h>
 
- /* Variaveis de posicao declaradas no lexico.l */
 extern int yylineno;
 extern int coluna_inicial;
-
- /* Funcao da tabela de simbolos declarada no lexico.l */
-extern void imprimir_tabela();
 extern FILE *yyin;
 
 void yyerror(const char *s);
 int yylex(void);
+
+#define HASH_SIZE 1024
+#define MAX_CODE 4096
+
+/* --- Constantes de Tipos e Categorias --- */
+#define TIPO_VOID 0
+#define TIPO_INT 1
+#define TIPO_FLOAT 2
+
+#define SYM_VAR 1
+#define SYM_FUNC 2
+
+/* --- Nova Estrutura da Tabela de Simbolos --- */
+typedef struct Simbolo {
+    char nome[64];
+    int tipo;       
+    int categoria;  
+    int escopo;     
+    struct Simbolo *prox;
+} Simbolo;
+
+/* --- Assinaturas da API --- */
+void abrirEscopo();
+void fecharEscopo();
+Simbolo* inserir_simbolo(const char *nome, int tipo, int categoria);
+Simbolo* buscar_simbolo(const char *nome);
+void erro_semantico(const char *msg);
+
+/* --- Variaveis Globais --- */
+Simbolo *tabela[HASH_SIZE] = {NULL};
+int escopo_atual = 0;
 %}
 
  /* Tokens */
 
+%union {
+    char str[64];
+    int tipo;
+    struct {
+        char place[64];
+        char code[MAX_CODE];
+        int tipo;
+    } expr;
+    struct {
+        char code[MAX_CODE];
+    } cmd;
+}
+
 %token INT FLOAT
-%token ID NUM_INT NUM_DEC
+%token <str> ID NUM_INT NUM_DEC
+
+%type <tipo> tipo
+%type <expr> expressao
+%type <cmd> comando lista_comandos bloco comando_if comando_while atribuicao io_stmt declaracao lista_decl_itens decl_item chamada_func
+
 %token IF ELSE WHILE READ PRINT RETURN
 %token PLUS MINUS MULT DIV MOD
 %token AND OR NOT
@@ -187,7 +232,6 @@ int main(int argc, char **argv) {
     fclose(f);
 
     printf("\nAnalise sintatica concluida.\n");
-    imprimir_tabela();
 
     return 0;
 }
