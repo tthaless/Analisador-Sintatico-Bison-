@@ -47,16 +47,10 @@ OTHER           .
 "print"         { return PRINT; }
 "return"        { return RETURN; }
 
- /* Identificadores */
-{ID}            {
-                    strcpy(yylval.str, yytext);
-                    return ID;
-                }
-
- /* Constantes Numericas */
-/* Constantes Numericas */
-{DECIMAL}       { strcpy(yylval.str, yytext); return NUM_DEC; }
-{INTEIRO}       { strcpy(yylval.str, yytext); return NUM_INT; }
+/* Identificadores */
+{ID}      { strcpy(yylval.str, yytext); return ID; }
+{DECIMAL} { strcpy(yylval.str, yytext); return NUM_DEC; }
+{INTEIRO} { strcpy(yylval.str, yytext); return NUM_INT; }
 
  /* Operadores Aritmeticos */
 "="             { return ASSIGN; }

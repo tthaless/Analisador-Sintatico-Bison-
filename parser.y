@@ -40,6 +40,12 @@ void erro_semantico(const char *msg);
 /* --- Variaveis Globais --- */
 Simbolo *tabela[HASH_SIZE] = {NULL};
 int escopo_atual = 0;
+int temp_count = 1;
+int tipo_atual = TIPO_VOID;
+
+void gerar_temp(char *buffer) {
+    sprintf(buffer, "t%d", temp_count++);
+}
 %}
 
  /* Tokens */
@@ -61,7 +67,7 @@ int escopo_atual = 0;
 %token <str> ID NUM_INT NUM_DEC
 
 %type <tipo> tipo
-%type <expr> expressao
+%type <expr> expressao argumentos parametros parametro
 %type <cmd> comando lista_comandos bloco comando_if comando_while atribuicao io_stmt declaracao lista_decl_itens decl_item chamada_func
 
 %token IF ELSE WHILE READ PRINT RETURN
@@ -97,21 +103,53 @@ programa
     ;
 
 lista_comandos
-    : comando
-    | lista_comandos comando
+    : comando {
+        strcpy($$.code, $1.code);
+    }
+    | lista_comandos comando {
+        snprintf($$.code, MAX_CODE, "%s%s", $1.code, $2.code);
+    }
     ;
 
 comando
     : declaracao SEMICOLON
-    | tipo ID LPAREN parametros RPAREN bloco
-    | tipo ID LPAREN RPAREN bloco
+    | tipo ID LPAREN {
+        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        abrirEscopo(); /* Abre o escopo para capturar os parametros */
+    } parametros RPAREN LBRACE lista_comandos RBRACE {
+        snprintf($$.code, MAX_CODE, "%s:\n%s", $2, $8.code);
+        fecharEscopo();
+    }
+    | tipo ID LPAREN {
+        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        abrirEscopo(); 
+    } RPAREN LBRACE lista_comandos RBRACE {
+        snprintf($$.code, MAX_CODE, "%s:\n%s", $2, $7.code);
+        fecharEscopo();
+    }
+    | tipo ID LPAREN {
+        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        abrirEscopo();
+    } parametros RPAREN LBRACE RBRACE {
+        snprintf($$.code, MAX_CODE, "%s:\n", $2);
+        fecharEscopo();
+    }
+    | tipo ID LPAREN {
+        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        abrirEscopo(); 
+    } RPAREN LBRACE RBRACE {
+        snprintf($$.code, MAX_CODE, "%s:\n", $2);
+        fecharEscopo();
+    }
+    | RETURN expressao SEMICOLON {
+        snprintf($$.code, MAX_CODE, "%s\treturn %s\n", $2.code, $2.place);
+    }
     | atribuicao SEMICOLON
     | comando_if
     | comando_while
     | bloco
     | io_stmt
     | chamada_func SEMICOLON
-    | RETURN expressao SEMICOLON
     | error SEMICOLON       { yyerrok; } /* Recuperacao de Erro (Panic Mode) */
     ;
 
@@ -138,23 +176,40 @@ comando_while
 
  /* Tipos suportados pela linguagem */
 tipo
-    : INT
-    | FLOAT
+    : INT   { $$ = TIPO_INT; }
+    | FLOAT { $$ = TIPO_FLOAT; }
     ;
 
  /* Declaracao de variaveis apenas */
 declaracao
-    : tipo lista_decl_itens
+    : tipo { tipo_atual = $1; } lista_decl_itens {
+        strcpy($$.code, $3.code);
+    }
     ;
 
 lista_decl_itens
-    : decl_item
-    | lista_decl_itens COMMA decl_item
+    : decl_item {
+        strcpy($$.code, $1.code);
+    }
+    | lista_decl_itens COMMA decl_item {
+        snprintf($$.code, MAX_CODE, "%s%s", $1.code, $3.code);
+    }
     ;
 
 decl_item
-    : ID
-    | ID ASSIGN expressao
+    : ID {
+        if (inserir_simbolo($1, tipo_atual, SYM_VAR) == NULL) {
+            erro_semantico("Variavel redeclarada no mesmo escopo");
+        }
+        strcpy($$.code, "");
+    }
+    | ID ASSIGN expressao {
+        if (inserir_simbolo($1, tipo_atual, SYM_VAR) == NULL) {
+            erro_semantico("Variavel redeclarada no mesmo escopo");
+        }
+        /* O Integrante 3 adicionara o IR da atribuicao aqui depois */
+        strcpy($$.code, "");
+    }
     ;
 
  /* Atribuicao simples */
@@ -188,22 +243,60 @@ expressao
  /* Regras de Funcoes e I/O */
 
 parametros
-    : parametro
-    | parametros COMMA parametro
+    : parametro {
+        strcpy($$.code, $1.code);
+        strcpy($$.place, $1.place);
+        $$.tipo = $1.tipo;
+    }
+    | parametros COMMA parametro {
+        snprintf($$.code, MAX_CODE, "%s%s", $1.code, $3.code);
+        strcpy($$.place, $3.place);
+        $$.tipo = $3.tipo;
+    }
     ;
 
+
 parametro
-    : tipo ID
+    : tipo ID {
+        if (inserir_simbolo($2, $1, SYM_VAR) == NULL) {
+            erro_semantico("Parametro redeclarado");
+        }
+        strcpy($$.place, $2);
+        strcpy($$.code, "");
+        $$.tipo = $1;
+    }
     ;
 
 chamada_func
-    : ID LPAREN argumentos RPAREN
-    | ID LPAREN RPAREN
+    : ID LPAREN argumentos RPAREN {
+        Simbolo *s = buscar_simbolo($1);
+        if (!s) erro_semantico("Funcao nao declarada");
+        else if (s->categoria != SYM_FUNC) erro_semantico("Identificador nao e uma funcao");
+        $$.tipo = s ? s->tipo : TIPO_INT;
+        strcpy($$.place, "");   /* Int. 2 preenche */
+        strcpy($$.code, "");    /* Int. 2 preenche */
+    }
+    | ID LPAREN RPAREN {
+        Simbolo *s = buscar_simbolo($1);
+        if (!s) erro_semantico("Funcao nao declarada");
+        else if (s->categoria != SYM_FUNC) erro_semantico("Identificador nao e uma funcao");
+        $$.tipo = s ? s->tipo : TIPO_INT;
+        strcpy($$.place, "");   /* Int. 2 preenche */
+        strcpy($$.code, "");    /* Int. 2 preenche */
+    }
     ;
 
 argumentos
-    : expressao
-    | argumentos COMMA expressao
+    : expressao {
+        strcpy($$.code, $1.code);
+        strcpy($$.place, $1.place);
+        $$.tipo = $1.tipo;
+    }
+    | argumentos COMMA expressao {
+        snprintf($$.code, MAX_CODE, "%s%s", $1.code, $3.code);
+        strcpy($$.place, $3.place);
+        $$.tipo = $3.tipo;
+    }
     ;
 
 io_stmt
