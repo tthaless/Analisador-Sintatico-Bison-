@@ -207,6 +207,86 @@ io_stmt
 
 %%
 
+
+/* API Tabela de Simbolos, Escopos e Funcoes */
+
+unsigned int hash(const char *str) {
+    unsigned int h = 0;
+    while (*str) h = (h * 31) + *str++;
+    return h % HASH_SIZE;
+}
+
+void abrirEscopo() {
+    escopo_atual++;
+}
+
+void fecharEscopo() {
+    for (int i = 0; i < HASH_SIZE; i++) {
+        Simbolo *atual = tabela[i];
+        Simbolo *ant = NULL;
+        
+        while (atual != NULL) {
+            if (atual->escopo == escopo_atual) {
+                Simbolo *remover = atual;
+                if (ant == NULL) tabela[i] = atual->prox;
+                else ant->prox = atual->prox;
+                atual = atual->prox;
+                free(remover);
+            } else {
+                ant = atual;
+                atual = atual->prox;
+            }
+        }
+    }
+    escopo_atual--;
+}
+
+Simbolo* inserir_simbolo(const char *nome, int tipo, int categoria) {
+    unsigned int idx = hash(nome);
+    Simbolo *atual = tabela[idx];
+    
+    /* Verifica se ja existe NO MESMO ESCOPO */
+    while (atual != NULL) {
+        if (strcmp(atual->nome, nome) == 0 && atual->escopo == escopo_atual) {
+            return NULL; /* Erro: redeclarado no mesmo escopo */
+        }
+        atual = atual->prox;
+    }
+    
+    Simbolo *novo = malloc(sizeof(Simbolo));
+    strcpy(novo->nome, nome);
+    novo->tipo = tipo;
+    novo->categoria = categoria; /* SYM_VAR ou SYM_FUNC */
+    novo->escopo = escopo_atual;
+    
+    novo->prox = tabela[idx];
+    tabela[idx] = novo;
+    
+    return novo;
+}
+
+Simbolo* buscar_simbolo(const char *nome) {
+    unsigned int idx = hash(nome);
+    Simbolo *atual = tabela[idx];
+    Simbolo *melhor = NULL;
+    
+    /* Busca a declaracao mais profunda (escopo mais interno) */
+    while (atual != NULL) {
+        if (strcmp(atual->nome, nome) == 0) {
+            if (!melhor || atual->escopo > melhor->escopo) {
+                melhor = atual;
+            }
+        }
+        atual = atual->prox;
+    }
+    return melhor;
+}
+
+void erro_semantico(const char *msg) {
+    fprintf(stderr, "ERRO SEMANTICO: %s na Linha %d, Coluna %d\n", 
+            msg, yylineno, coluna_inicial);
+}
+
  /* Funcoes Auxiliares em C */
 
  /* Relato de erros sintaticos com posicao */
