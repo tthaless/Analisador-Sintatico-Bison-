@@ -116,8 +116,14 @@ comando
     ;
 
 bloco
-    : LBRACE lista_comandos RBRACE
-    | LBRACE RBRACE
+    : LBRACE { abrirEscopo(); } lista_comandos RBRACE {
+        strcpy($$.code, $3.code);
+        fecharEscopo();
+    }
+    | LBRACE { abrirEscopo(); } RBRACE {
+        strcpy($$.code, "");
+        fecharEscopo();
+    }
     ;
 
 comando_if
