@@ -49,18 +49,6 @@ int temp_count = 1;
 int label_count = 1;
 int tipo_atual = TIPO_VOID;
 
-void gerar_temp(char *buffer) {
-    sprintf(buffer, "t%d", temp_count++);
-}
-
-void gerar_label(char *buffer) {
-    sprintf(buffer, "L%d", label_count++);
-}
-
-int promover(int t1, int t2) {
-    if (t1 == TIPO_FLOAT || t2 == TIPO_FLOAT) return TIPO_FLOAT;
-    return TIPO_INT;
-}
 %}
 
  /* Tokens */
@@ -229,7 +217,18 @@ decl_item
 
  /* Atribuicao simples */
 atribuicao
-    : ID ASSIGN expressao
+    : ID ASSIGN expressao {
+        Simbolo *s = buscar_simbolo($1);
+        if (!s) {
+            erro_semantico("Variavel nao declarada");
+        } else if (s->tipo != $3.tipo) {
+            if (!(s->tipo == TIPO_FLOAT && $3.tipo == TIPO_INT)) {
+                erro_semantico("Tipos incompativeis na atribuicao");
+            }
+        }
+        /* IR da atribuicao fica para o Integrante 3 */
+        strcpy($$.code, $3.code);
+    }
     ;
 
 expressao
@@ -574,8 +573,13 @@ argumentos
     ;
 
 io_stmt
-    : PRINT LPAREN expressao RPAREN SEMICOLON
-    | READ LPAREN ID RPAREN SEMICOLON
+    : PRINT LPAREN expressao RPAREN SEMICOLON {
+        /* IR fica para o Integrante 3, mas propaga o code da expressao */
+        strcpy($$.code, $3.code);
+    }
+    | READ LPAREN ID RPAREN SEMICOLON {
+        strcpy($$.code, "");
+    }
     ;
 
 %%
@@ -666,6 +670,18 @@ void erro_semantico(const char *msg) {
 void yyerror(const char *s) {
     fprintf(stderr, "ERRO SINTATICO: %s na Linha %d, Coluna %d\n",
             s, yylineno, coluna_inicial);
+}
+
+/* Funcoes Auxiliares (IR) */
+void gerar_temp(char *buffer) {
+    sprintf(buffer, "t%d", temp_count++);
+}
+void gerar_label(char *buffer) {
+    sprintf(buffer, "L%d", label_count++);
+}
+int promover(int t1, int t2) {
+    if (t1 == TIPO_FLOAT || t2 == TIPO_FLOAT) return TIPO_FLOAT;
+    return TIPO_INT;
 }
 
 int main(int argc, char **argv) {
