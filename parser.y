@@ -1,4 +1,5 @@
 %{
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,7 @@ int yylex(void);
 
 #define HASH_SIZE 1024
 #define MAX_CODE 4096
+#define MAX_PARAMS 16
 
 /* --- Constantes de Tipos e Categorias --- */
 #define TIPO_VOID 0
@@ -21,12 +23,14 @@ int yylex(void);
 #define SYM_VAR 1
 #define SYM_FUNC 2
 
-/* --- Nova Estrutura da Tabela de Simbolos --- */
+/* --- Estrutura da Tabela de Simbolos --- */
 typedef struct Simbolo {
     char nome[64];
     int tipo;       
     int categoria;  
     int escopo;     
+    int num_params;
+    int tipos_params[MAX_PARAMS];
     struct Simbolo *prox;
 } Simbolo;
 
@@ -41,6 +45,7 @@ void erro_semantico(const char *msg);
 void gerar_temp(char *buffer);
 void gerar_label(char *buffer);
 int promover(int t1, int t2);
+void validar_chamada(Simbolo *s, const char *nome, int *tipos_args, int num_args);
 
 /* --- Variaveis Globais --- */
 Simbolo *tabela[HASH_SIZE] = {NULL};
@@ -48,6 +53,14 @@ int escopo_atual = 0;
 int temp_count = 1;
 int label_count = 1;
 int tipo_atual = TIPO_VOID;
+
+int params_buffer[MAX_PARAMS];
+int params_buffer_count = 0;
+
+Simbolo *func_em_declaracao = NULL;
+
+int args_buffer[MAX_PARAMS];
+int args_buffer_count = 0;
 
 %}
 
@@ -107,7 +120,8 @@ programa
 
 lista_comandos
     : comando {
-        strcpy($$.code, $1.code);
+        strncpy($$.code, $1.code, MAX_CODE - 1);
+        $$.code[MAX_CODE - 1] = '\0';
     }
     | lista_comandos comando {
         snprintf($$.code, MAX_CODE, "%s%s", $1.code, $2.code);
@@ -117,28 +131,50 @@ lista_comandos
 comando
     : declaracao SEMICOLON
     | tipo ID LPAREN {
-        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        func_em_declaracao = inserir_simbolo($2, $1, SYM_FUNC);
+        if (func_em_declaracao == NULL) erro_semantico("Funcao redeclarada");
+        params_buffer_count = 0;
         abrirEscopo(); /* Abre o escopo para capturar os parametros */
-    } parametros RPAREN LBRACE lista_comandos RBRACE {
-        snprintf($$.code, MAX_CODE, "%s:\n%s", $2, $8.code);
+    } parametros RPAREN {
+        if (func_em_declaracao != NULL) {
+            func_em_declaracao->num_params = params_buffer_count;
+            for (int i = 0; i < params_buffer_count; i++) {
+                func_em_declaracao->tipos_params[i] = params_buffer[i];
+            }
+        }
+    } LBRACE lista_comandos RBRACE {
+        snprintf($$.code, MAX_CODE, "%s:\n%s", $2, $9.code);
         fecharEscopo();
     }
     | tipo ID LPAREN {
-        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        func_em_declaracao = inserir_simbolo($2, $1, SYM_FUNC);
+        if (func_em_declaracao == NULL) erro_semantico("Funcao redeclarada");
+        if (func_em_declaracao != NULL) func_em_declaracao->num_params = 0;
         abrirEscopo(); 
     } RPAREN LBRACE lista_comandos RBRACE {
         snprintf($$.code, MAX_CODE, "%s:\n%s", $2, $7.code);
         fecharEscopo();
     }
     | tipo ID LPAREN {
-        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        func_em_declaracao = inserir_simbolo($2, $1, SYM_FUNC);
+        if (func_em_declaracao == NULL) erro_semantico("Funcao redeclarada");
+        params_buffer_count = 0;
         abrirEscopo();
-    } parametros RPAREN LBRACE RBRACE {
+    } parametros RPAREN {
+        if (func_em_declaracao != NULL) {
+            func_em_declaracao->num_params = params_buffer_count;
+            for (int i = 0; i < params_buffer_count; i++) {
+                func_em_declaracao->tipos_params[i] = params_buffer[i];
+            }
+        }
+    } LBRACE RBRACE {
         snprintf($$.code, MAX_CODE, "%s:\n", $2);
         fecharEscopo();
     }
     | tipo ID LPAREN {
-        if (inserir_simbolo($2, $1, SYM_FUNC) == NULL) erro_semantico("Funcao redeclarada");
+        func_em_declaracao = inserir_simbolo($2, $1, SYM_FUNC);
+        if (func_em_declaracao == NULL) erro_semantico("Funcao redeclarada");
+        if (func_em_declaracao != NULL) func_em_declaracao->num_params = 0;
         abrirEscopo(); 
     } RPAREN LBRACE RBRACE {
         snprintf($$.code, MAX_CODE, "%s:\n", $2);
@@ -152,17 +188,21 @@ comando
     | comando_while
     | bloco
     | io_stmt
-    | chamada_func SEMICOLON
+    | chamada_func SEMICOLON {
+        strncpy($$.code, $1.code, MAX_CODE - 1);
+        $$.code[MAX_CODE - 1] = '\0';
+    }
     | error SEMICOLON       { yyerrok; } /* Recuperacao de Erro (Panic Mode) */
     ;
 
 bloco
     : LBRACE { abrirEscopo(); } lista_comandos RBRACE {
-        strcpy($$.code, $3.code);
+        strncpy($$.code, $3.code, MAX_CODE - 1);
+        $$.code[MAX_CODE - 1] = '\0';
         fecharEscopo();
     }
     | LBRACE { abrirEscopo(); } RBRACE {
-        strcpy($$.code, "");
+        $$.code[0] = '\0';
         fecharEscopo();
     }
     ;
@@ -186,13 +226,15 @@ tipo
  /* Declaracao de variaveis apenas */
 declaracao
     : tipo { tipo_atual = $1; } lista_decl_itens {
-        strcpy($$.code, $3.code);
+        strncpy($$.code, $3.code, MAX_CODE - 1);
+        $$.code[MAX_CODE - 1] = '\0';
     }
     ;
 
 lista_decl_itens
     : decl_item {
-        strcpy($$.code, $1.code);
+        strncpy($$.code, $1.code, MAX_CODE - 1);
+        $$.code[MAX_CODE - 1] = '\0';
     }
     | lista_decl_itens COMMA decl_item {
         snprintf($$.code, MAX_CODE, "%s%s", $1.code, $3.code);
@@ -204,14 +246,13 @@ decl_item
         if (inserir_simbolo($1, tipo_atual, SYM_VAR) == NULL) {
             erro_semantico("Variavel redeclarada no mesmo escopo");
         }
-        strcpy($$.code, "");
+        $$.code[0] = '\0';
     }
     | ID ASSIGN expressao {
         if (inserir_simbolo($1, tipo_atual, SYM_VAR) == NULL) {
             erro_semantico("Variavel redeclarada no mesmo escopo");
         }
-        /* O Integrante 3 adicionara o IR da atribuicao aqui depois */
-        strcpy($$.code, "");
+        $$.code[0] = '\0';
     }
     ;
 
@@ -226,255 +267,368 @@ atribuicao
                 erro_semantico("Tipos incompativeis na atribuicao");
             }
         }
-        /* IR da atribuicao fica para o Integrante 3 */
-        strcpy($$.code, $3.code);
+        /* IR da atribuicao a ser concluido na proxima etapa */
+        strncpy($$.code, $3.code, MAX_CODE - 1);
+        $$.code[MAX_CODE - 1] = '\0';
     }
     ;
 
 expressao
     /* ── Aritméticas ── */
     : expressao PLUS expressao {
-        char temp[64];
-        gerar_temp(temp);
         int tipo_res = promover($1.tipo, $3.tipo);
         char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
         char place_esq[64], place_dir[64];
-        strcpy(cod_esq, $1.code);
-        strcpy(cod_dir, $3.code);
-        strcpy(place_esq, $1.place);
-        strcpy(place_dir, $3.place);
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+
         if (tipo_res == TIPO_FLOAT && $1.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_esq + strlen(cod_esq), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_esq);
-            strcpy(place_esq, tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
         }
         if (tipo_res == TIPO_FLOAT && $3.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_dir + strlen(cod_dir), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_dir);
-            strcpy(place_dir, tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
+        char temp[64];
+        gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s + %s\n",
                  cod_esq, cod_dir, temp, place_esq, place_dir);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = tipo_res;
     }
     | expressao MINUS expressao {
-        char temp[64];
-        gerar_temp(temp);
         int tipo_res = promover($1.tipo, $3.tipo);
         char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
         char place_esq[64], place_dir[64];
-        strcpy(cod_esq, $1.code);
-        strcpy(cod_dir, $3.code);
-        strcpy(place_esq, $1.place);
-        strcpy(place_dir, $3.place);
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
         if (tipo_res == TIPO_FLOAT && $1.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_esq + strlen(cod_esq), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_esq);
-            strcpy(place_esq, tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
         }
         if (tipo_res == TIPO_FLOAT && $3.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_dir + strlen(cod_dir), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_dir);
-            strcpy(place_dir, tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
+        char temp[64];
+        gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s - %s\n",
                  cod_esq, cod_dir, temp, place_esq, place_dir);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = tipo_res;
     }
     | expressao MULT expressao {
-        char temp[64];
-        gerar_temp(temp);
         int tipo_res = promover($1.tipo, $3.tipo);
         char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
         char place_esq[64], place_dir[64];
-        strcpy(cod_esq, $1.code);
-        strcpy(cod_dir, $3.code);
-        strcpy(place_esq, $1.place);
-        strcpy(place_dir, $3.place);
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+
         if (tipo_res == TIPO_FLOAT && $1.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_esq + strlen(cod_esq), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_esq);
-            strcpy(place_esq, tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
         }
         if (tipo_res == TIPO_FLOAT && $3.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_dir + strlen(cod_dir), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_dir);
-            strcpy(place_dir, tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
+        char temp[64];
+        gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s * %s\n",
                  cod_esq, cod_dir, temp, place_esq, place_dir);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = tipo_res;
     }
     | expressao DIV expressao {
-        char temp[64];
-        gerar_temp(temp);
         int tipo_res = promover($1.tipo, $3.tipo);
         char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
         char place_esq[64], place_dir[64];
-        strcpy(cod_esq, $1.code);
-        strcpy(cod_dir, $3.code);
-        strcpy(place_esq, $1.place);
-        strcpy(place_dir, $3.place);
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+
         if (tipo_res == TIPO_FLOAT && $1.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_esq + strlen(cod_esq), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_esq);
-            strcpy(place_esq, tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
         }
         if (tipo_res == TIPO_FLOAT && $3.tipo == TIPO_INT) {
             char tmp2[64]; gerar_temp(tmp2);
-            snprintf(cod_dir + strlen(cod_dir), MAX_CODE, "\t%s = (float)%s\n", tmp2, place_dir);
-            strcpy(place_dir, tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
+        char temp[64];
+        gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s / %s\n",
                  cod_esq, cod_dir, temp, place_esq, place_dir);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = tipo_res;
     }
     | expressao MOD expressao {
         if ($1.tipo != TIPO_INT || $3.tipo != TIPO_INT) {
-            erro_semantico("Operador '%' requer operandos inteiros");
+            erro_semantico("Operador modulo (%%) requer operandos inteiros");
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s %% %s\n",
                  $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
 
     /* ── Lógicas ── */
     | expressao AND expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '&&' requer operandos numericos");
-        }
+        char log_esq[64];
+        gerar_temp(log_esq);
+        char lbl_avalia_dir[64], lbl_fim[64];
+        gerar_label(lbl_avalia_dir);
+        gerar_label(lbl_fim);
         char temp[64];
         gerar_temp(temp);
-        snprintf($$.code, MAX_CODE, "%s%s\t%s = %s && %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+
+        snprintf($$.code, MAX_CODE,
+                 "%s\t%s = %s != 0\n\tif %s goto %s\n\t%s = 0\n\tgoto %s\n%s:\n%s\t%s = %s != 0\n%s:\n",
+                 $1.code, log_esq, $1.place,
+                 log_esq, lbl_avalia_dir,
+                 temp,
+                 lbl_fim,
+                 lbl_avalia_dir,
+                 $3.code, temp, $3.place,
+                 lbl_fim);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | expressao OR expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '||' requer operandos numericos");
-        }
+        char log_esq[64];
+        gerar_temp(log_esq);
+        char lbl_avalia_dir[64], lbl_fim[64];
+        gerar_label(lbl_avalia_dir);
+        gerar_label(lbl_fim);
         char temp[64];
         gerar_temp(temp);
-        snprintf($$.code, MAX_CODE, "%s%s\t%s = %s || %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+
+        char lbl_curto[64];
+        gerar_label(lbl_curto);
+        snprintf($$.code, MAX_CODE,
+                 "%s\t%s = %s != 0\n\tif %s goto %s\n\tgoto %s\n%s:\n\t%s = 1\n\tgoto %s\n%s:\n%s\t%s = %s != 0\n%s:\n",
+                 $1.code, log_esq, $1.place,
+                 log_esq, lbl_curto,
+                 lbl_avalia_dir,
+                 lbl_curto,
+                 temp,
+                 lbl_fim,
+                 lbl_avalia_dir,
+                 $3.code, temp, $3.place,
+                 lbl_fim);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
 
     /* ── Relacionais ── */
     | expressao EQ expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '==' requer operandos numericos");
+        int tipo_cmp = promover($1.tipo, $3.tipo);
+        char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
+        char place_esq[64], place_dir[64];
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+        if (tipo_cmp == TIPO_FLOAT && $1.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
+        }
+        if (tipo_cmp == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s == %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+                 cod_esq, cod_dir, temp, place_esq, place_dir);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | expressao NE expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '!=' requer operandos numericos");
+        int tipo_cmp = promover($1.tipo, $3.tipo);
+        char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
+        char place_esq[64], place_dir[64];
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+        if (tipo_cmp == TIPO_FLOAT && $1.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
+        }
+        if (tipo_cmp == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s != %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+                 cod_esq, cod_dir, temp, place_esq, place_dir);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | expressao LT expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '<' requer operandos numericos");
+        int tipo_cmp = promover($1.tipo, $3.tipo);
+        char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
+        char place_esq[64], place_dir[64];
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+        if (tipo_cmp == TIPO_FLOAT && $1.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
+        }
+        if (tipo_cmp == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s < %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+                 cod_esq, cod_dir, temp, place_esq, place_dir);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | expressao LE expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '<=' requer operandos numericos");
+        int tipo_cmp = promover($1.tipo, $3.tipo);
+        char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
+        char place_esq[64], place_dir[64];
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+        if (tipo_cmp == TIPO_FLOAT && $1.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
+        }
+        if (tipo_cmp == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s <= %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+                 cod_esq, cod_dir, temp, place_esq, place_dir);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | expressao GT expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '>' requer operandos numericos");
+        int tipo_cmp = promover($1.tipo, $3.tipo);
+        char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
+        char place_esq[64], place_dir[64];
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+        if (tipo_cmp == TIPO_FLOAT && $1.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
+        }
+        if (tipo_cmp == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s > %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+                 cod_esq, cod_dir, temp, place_esq, place_dir);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | expressao GE expressao {
-        if ($1.tipo == TIPO_VOID || $3.tipo == TIPO_VOID) {
-            erro_semantico("Operador '>=' requer operandos numericos");
+        int tipo_cmp = promover($1.tipo, $3.tipo);
+        char cod_esq[MAX_CODE], cod_dir[MAX_CODE];
+        char place_esq[64], place_dir[64];
+        strncpy(cod_esq, $1.code, MAX_CODE - 1); cod_esq[MAX_CODE - 1] = '\0';
+        strncpy(cod_dir, $3.code, MAX_CODE - 1); cod_dir[MAX_CODE - 1] = '\0';
+        strncpy(place_esq, $1.place, 63); place_esq[63] = '\0';
+        strncpy(place_dir, $3.place, 63); place_dir[63] = '\0';
+        if (tipo_cmp == TIPO_FLOAT && $1.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_esq + strlen(cod_esq), MAX_CODE - strlen(cod_esq), "\t%s = (float)%s\n", tmp2, place_esq);
+            strncpy(place_esq, tmp2, 63); place_esq[63] = '\0';
+        }
+        if (tipo_cmp == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+            char tmp2[64]; gerar_temp(tmp2);
+            snprintf(cod_dir + strlen(cod_dir), MAX_CODE - strlen(cod_dir), "\t%s = (float)%s\n", tmp2, place_dir);
+            strncpy(place_dir, tmp2, 63); place_dir[63] = '\0';
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s%s\t%s = %s >= %s\n",
-                 $1.code, $3.code, temp, $1.place, $3.place);
-        strcpy($$.place, temp);
+                 cod_esq, cod_dir, temp, place_esq, place_dir);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
 
     /* ── Unárias ── */
     | NOT expressao {
-        if ($2.tipo == TIPO_VOID) {
-            erro_semantico("Operador '!' requer operando numerico");
-        }
+        char cod[MAX_CODE];
+        strncpy(cod, $2.code, MAX_CODE - 1); cod[MAX_CODE - 1] = '\0';
+
+        char log_temp[64];
+        gerar_temp(log_temp);
+        snprintf(cod + strlen(cod), MAX_CODE - strlen(cod), "\t%s = %s != 0\n", log_temp, $2.place);
+
         char temp[64];
         gerar_temp(temp);
-        snprintf($$.code, MAX_CODE, "%s\t%s = !%s\n", $2.code, temp, $2.place);
-        strcpy($$.place, temp);
+        snprintf($$.code, MAX_CODE, "%s\t%s = !%s\n", cod, temp, log_temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | MINUS expressao %prec UMINUS {
-        if ($2.tipo == TIPO_VOID) {
-            erro_semantico("Operador unario '-' requer operando numerico");
-        }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s\t%s = -%s\n", $2.code, temp, $2.place);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = $2.tipo;
     }
 
     /* ── Agrupamento ── */
     | LPAREN expressao RPAREN {
-        strcpy($$.code,  $2.code);
-        strcpy($$.place, $2.place);
+        strncpy($$.code,  $2.code, MAX_CODE - 1); $$.code[MAX_CODE - 1] = '\0';
+        strncpy($$.place, $2.place, 63); $$.place[63] = '\0';
         $$.tipo = $2.tipo;
     }
 
     /* ── Literais ── */
     | NUM_INT {
-        strcpy($$.code, "");
-        strcpy($$.place, $1);
+        $$.code[0] = '\0';
+        strncpy($$.place, $1, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_INT;
     }
     | NUM_DEC {
-        strcpy($$.code, "");
-        strcpy($$.place, $1);
+        $$.code[0] = '\0';
+        strncpy($$.place, $1, 63); $$.place[63] = '\0';
         $$.tipo = TIPO_FLOAT;
     }
 
@@ -483,20 +637,20 @@ expressao
         Simbolo *s = buscar_simbolo($1);
         if (!s) {
             erro_semantico("Identificador nao declarado");
-            strcpy($$.place, $1);
-            strcpy($$.code, "");
+            strncpy($$.place, $1, 63); $$.place[63] = '\0';
+            $$.code[0] = '\0';
             $$.tipo = TIPO_INT;
         } else {
-            strcpy($$.place, $1);
-            strcpy($$.code, "");
+            strncpy($$.place, $1, 63); $$.place[63] = '\0';
+            $$.code[0] = '\0';
             $$.tipo = s->tipo;
         }
     }
 
     /* ── Chamada de função ── */
     | chamada_func {
-        strcpy($$.code,  $1.code);
-        strcpy($$.place, $1.place);
+        strncpy($$.code,  $1.code, MAX_CODE - 1); $$.code[MAX_CODE - 1] = '\0';
+        strncpy($$.place, $1.place, 63); $$.place[63] = '\0';
         $$.tipo = $1.tipo;
     }
     ;
@@ -505,13 +659,13 @@ expressao
 
 parametros
     : parametro {
-        strcpy($$.code, $1.code);
-        strcpy($$.place, $1.place);
+        strncpy($$.code, $1.code, MAX_CODE - 1); $$.code[MAX_CODE - 1] = '\0';
+        strncpy($$.place, $1.place, 63); $$.place[63] = '\0';
         $$.tipo = $1.tipo;
     }
     | parametros COMMA parametro {
         snprintf($$.code, MAX_CODE, "%s%s", $1.code, $3.code);
-        strcpy($$.place, $3.place);
+        strncpy($$.place, $3.place, 63); $$.place[63] = '\0';
         $$.tipo = $3.tipo;
     }
     ;
@@ -522,25 +676,30 @@ parametro
         if (inserir_simbolo($2, $1, SYM_VAR) == NULL) {
             erro_semantico("Parametro redeclarado");
         }
-        strcpy($$.place, $2);
-        strcpy($$.code, "");
+        if (params_buffer_count < MAX_PARAMS) {
+            params_buffer[params_buffer_count++] = $1;
+        }
+        strncpy($$.place, $2, 63); $$.place[63] = '\0';
+        $$.code[0] = '\0';
         $$.tipo = $1;
     }
     ;
 
 chamada_func
-    : ID LPAREN argumentos RPAREN {
+    : ID LPAREN { args_buffer_count = 0; } argumentos RPAREN {
         Simbolo *s = buscar_simbolo($1);
         if (!s) {
             erro_semantico("Funcao nao declarada");
         } else if (s->categoria != SYM_FUNC) {
             erro_semantico("Identificador nao e uma funcao");
+        } else {
+            validar_chamada(s, $1, args_buffer, args_buffer_count);
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "%s\t%s = call %s\n",
-                 $3.code, temp, $1);
-        strcpy($$.place, temp);
+                 $4.code, temp, $1);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = s ? s->tipo : TIPO_INT;
     }
     | ID LPAREN RPAREN {
@@ -549,36 +708,43 @@ chamada_func
             erro_semantico("Funcao nao declarada");
         } else if (s->categoria != SYM_FUNC) {
             erro_semantico("Identificador nao e uma funcao");
+        } else {
+            validar_chamada(s, $1, NULL, 0);
         }
         char temp[64];
         gerar_temp(temp);
         snprintf($$.code, MAX_CODE, "\t%s = call %s\n", temp, $1);
-        strcpy($$.place, temp);
+        strncpy($$.place, temp, 63); $$.place[63] = '\0';
         $$.tipo = s ? s->tipo : TIPO_INT;
     }
     ;
 
 argumentos
     : expressao {
+        if (args_buffer_count < MAX_PARAMS) {
+            args_buffer[args_buffer_count++] = $1.tipo;
+        }
         snprintf($$.code, MAX_CODE, "%s\tparam %s\n", $1.code, $1.place);
-        strcpy($$.place, $1.place);
+        strncpy($$.place, $1.place, 63); $$.place[63] = '\0';
         $$.tipo = $1.tipo;
     }
     | argumentos COMMA expressao {
+        if (args_buffer_count < MAX_PARAMS) {
+            args_buffer[args_buffer_count++] = $3.tipo;
+        }
         snprintf($$.code, MAX_CODE, "%s%s\tparam %s\n",
                  $1.code, $3.code, $3.place);
-        strcpy($$.place, $3.place);
+        strncpy($$.place, $3.place, 63); $$.place[63] = '\0';
         $$.tipo = $3.tipo;
     }
     ;
 
 io_stmt
     : PRINT LPAREN expressao RPAREN SEMICOLON {
-        /* IR fica para o Integrante 3, mas propaga o code da expressao */
-        strcpy($$.code, $3.code);
+        strncpy($$.code, $3.code, MAX_CODE - 1); $$.code[MAX_CODE - 1] = '\0';
     }
     | READ LPAREN ID RPAREN SEMICOLON {
-        strcpy($$.code, "");
+        $$.code[0] = '\0';
     }
     ;
 
@@ -631,10 +797,12 @@ Simbolo* inserir_simbolo(const char *nome, int tipo, int categoria) {
     }
     
     Simbolo *novo = malloc(sizeof(Simbolo));
-    strcpy(novo->nome, nome);
+    strncpy(novo->nome, nome, 63);
+    novo->nome[63] = '\0';
     novo->tipo = tipo;
     novo->categoria = categoria; /* SYM_VAR ou SYM_FUNC */
     novo->escopo = escopo_atual;
+    novo->num_params = 0;
     
     novo->prox = tabela[idx];
     tabela[idx] = novo;
@@ -682,6 +850,30 @@ void gerar_label(char *buffer) {
 int promover(int t1, int t2) {
     if (t1 == TIPO_FLOAT || t2 == TIPO_FLOAT) return TIPO_FLOAT;
     return TIPO_INT;
+}
+
+/* Valida aridade e tipo dos argumentos contra a assinatura da funcao. */
+void validar_chamada(Simbolo *s, const char *nome, int *tipos_args, int num_args) {
+    if (num_args != s->num_params) {
+        char msg[128];
+        snprintf(msg, sizeof(msg),
+                 "Funcao '%s' espera %d argumento(s), mas recebeu %d",
+                 nome, s->num_params, num_args);
+        erro_semantico(msg);
+        return;
+    }
+    for (int i = 0; i < num_args; i++) {
+        int esperado = s->tipos_params[i];
+        int recebido = tipos_args[i];
+        if (esperado != recebido &&
+            !(esperado == TIPO_FLOAT && recebido == TIPO_INT)) {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "Funcao '%s': tipo incompativel no argumento %d",
+                     nome, i + 1);
+            erro_semantico(msg);
+        }
+    }
 }
 
 int main(int argc, char **argv) {
