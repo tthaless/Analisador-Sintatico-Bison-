@@ -4,16 +4,19 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Desativa os warnings gerados pelo código automático do Flex */
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-label"
 
 int coluna = 1;
 int coluna_inicial = 1;
 
+/* Atualiza a contagem de colunas antes de cada ação */
 #define YY_USER_ACTION { coluna_inicial = coluna; coluna += yyleng; }
+
 %}
 
- /* Definicoes Regulares */
+/* Definições Regulares */
 WS              [ \t]+
 DIGITO          [0-9]
 LETRA           [a-zA-Z]
@@ -22,7 +25,6 @@ DECIMAL         {DIGITO}+\.{DIGITO}+
 ID              {LETRA}({LETRA}|{DIGITO}|_)*
 NEWLINE         \n
 LINE_COMMENT    "//".*
-OTHER           .
 
 %option noyywrap
 %option yylineno
@@ -31,11 +33,11 @@ OTHER           .
 
 %%
 
-{WS}            ; /* Ignora espacos e tabs */
-{LINE_COMMENT}  ; /* Comentario de linha unica */
+{WS}            ; /* Ignora espaços e tabs */
+{LINE_COMMENT}  ; /* Comentário de linha única */
 {NEWLINE}       { coluna = 1; }
 
-"/*"([^*]|\*+[^*/])*\*+"/" ; /* Tratamento de comentario em bloco */
+"/*"([^*]|\*+[^*/])*\*+"/" ; /* Tratamento de comentário em bloco */
 
  /* Palavras Reservadas */
 "int"           { return INT; }
@@ -47,12 +49,17 @@ OTHER           .
 "print"         { return PRINT; }
 "return"        { return RETURN; }
 
-  /* Identificadores */
-{ID}      { strcpy(yylval.str, yytext); return ID; }
-{DECIMAL} { strcpy(yylval.str, yytext); return NUM_DEC; }
-{INTEIRO} { strcpy(yylval.str, yytext); return NUM_INT; }
+ /* Identificadores */
+{ID}            {
+                    yylval.sval = strdup(yytext);
+                    return ID;
+                }
 
- /* Operadores Aritmeticos */
+ /* Constantes Numéricas */
+{DECIMAL}       { yylval.sval = strdup(yytext); return NUM_DEC; }
+{INTEIRO}       { yylval.sval = strdup(yytext); return NUM_INT; }
+
+ /* Operadores Aritméticos */
 "="             { return ASSIGN; }
 "+"             { return PLUS; }
 "-"             { return MINUS; }
@@ -60,11 +67,11 @@ OTHER           .
 "/"             { return DIV; }
 "%"             { return MOD; }
 
- /* Operadores Logicos */
+ /* Operadores Lógicos */
 "&&"            { return AND; }
 "||"            { return OR; }
 
- /* Operadores Relacionais */
+ /* Operadores Relacionais e Unários */
 "!"             { return NOT; }
 "=="            { return EQ; }
 "!="            { return NE; }
@@ -73,7 +80,7 @@ OTHER           .
 "<"             { return LT; }
 ">"             { return GT; }
 
- /* Pontuacao */
+ /* Pontuação */
 "("             { return LPAREN; }
 ")"             { return RPAREN; }
 "{"             { return LBRACE; }
@@ -81,11 +88,10 @@ OTHER           .
 ","             { return COMMA; }
 ";"             { return SEMICOLON; }
 
- /* Erro Lexico */
-{OTHER}         {
-                    fprintf(stderr,
-                        "\nERRO LEXICO: '%s' na Linha %d, Coluna %d\n",
-                        yytext, yylineno, coluna_inicial);
+ /* Erro Léxico */
+.               {
+                    fprintf(stderr, "\nERRO LEXICO: '%s' na Linha %d, Coluna %d\n",
+                            yytext, yylineno, coluna_inicial);
                 }
 
 %%

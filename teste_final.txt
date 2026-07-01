@@ -1,90 +1,47 @@
-/*
-comentário inútil
-*/
+// ============================================================
+// Teste de TIPOS - valida as correções aplicadas:
+// 1) atribuicao: float -> int deve ser ERRO
+// 2) decl_item (ID ASSIGN expressao): float -> int deve ser ERRO
+// 3) casos válidos (mesma checagem não pode gerar falso positivo)
+// ============================================================
 
-int a;  
-int b, c;
-int flag;
-int ativo, concluido;  
-
-int z  
-
-a = 5;
-b = a;
-c = a + b * 3;
-flag = 1;
-ativo = 0;
-concluido = ativo;
-
-int w,;  
-
-a = 3 + 2 * 5;
-b = (a + 1) * 4 - 2;
-c = -a + (b - -c) / 2;
-
-a = ;
-
-flag = a < b;
-flag = a <= b;
-flag = a > b;
-flag = a >= b;
-flag = a == b;
-flag = a != b;
-
-if (a < b 
-    c = 1;  
-
-flag = 1 && 0;
-flag = (a < b) || (c == a);
-flag = !flag;
-flag = !(a >= b && c != a);
-
-if (a >= 10 && a <= 20 || !(c == 5))
-    a = a + 1;
-
-while ()    
-    a = a + 1;
-
-@
-
-int S = -2;
-P = -0;
-
-if (a < b)
-    a = b;
-
-if (a == b)
-    c = 1;
-else
-    c = 2;
-
-a = 5 +* 2;  
-
-//dangling else
-if (a < b)
-    if (b < c)
-        a = b;
-    else
-        c = a;
-
-while (a < 10)
-    a = a + 1;
-
-while (a < 20) {
-    a = a + 1;
-    print(a);
-}
-
-print(a);
-read(b);
-
+int principal()
 {
-    int x, y;  
-    x = 10;
-    y = 20;
-    print(x);
-    print(y);
-}        
+    int a, b, h;
+    float c, f, g;
 
-else    
-    a = 1;
+    /* ---- CASOS QUE DEVEM DAR ERRO ---- */
+
+    /* Erro esperado: declaração int inicializada com float */
+    int x = 2.5;             // Erro Semantico: Declaracao incompativel ... 'x'
+
+    /* Erro esperado: atribuição de float em variável int já declarada */
+    c = 3.5;
+    a = c;                   // Erro Semantico: Atribuicao incompativel ... 'a'
+
+    /* ---- CASOS QUE DEVEM SER ACEITOS (não podem gerar erro) ---- */
+
+    /* Válido: promoção int -> float na declaração */
+    float y = 5;              // ok, deve emitir coerção (float) 5
+
+    /* Válido: promoção int -> float na atribuição */
+    h = 2;
+    g = h;                    // ok, deve emitir coerção (float) h_x
+
+    /* Válido: mesmo tipo em declaração e atribuição */
+    int b2 = 10;
+    b = b2;
+    float f2 = 1.5;
+    f = f2;
+
+    /* ---- Teste indireto da correção do strdup($1) em NUM_INT/NUM_DEC ----
+       Vários literais numéricos em sequência, sem espaço para o valor
+       de yylval.sval ser sobrescrito por engano entre o token e a
+       redução da regra. Serve como teste de regressão. */
+    a = 1 + 2 + 3 + 4 + 5;
+    c = 1.1 + 2.2 + 3.3;
+    print(a);
+    print(c);
+
+    return 0;
+}
