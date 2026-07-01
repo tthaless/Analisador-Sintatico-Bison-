@@ -197,7 +197,7 @@ comando
         strncpy($$.code, $1.code, MAX_CODE - 1);
         $$.code[MAX_CODE - 1] = '\0';
     }
-    | error SEMICOLON       { yyerrok; } /* Recuperacao de Erro (Panic Mode) */
+    | error SEMICOLON       { $$.code[0] = '\0'; yyerrok; } /* Recuperacao de Erro (Panic Mode) */
     ;
 
 bloco
