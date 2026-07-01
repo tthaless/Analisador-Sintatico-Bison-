@@ -117,7 +117,10 @@ int args_buffer_count = 0;
  /* Regras da Gramatica (Producao) */
 
 programa
-    : lista_comandos
+    : lista_comandos {
+        printf("\n===== CODIGO INTERMEDIARIO =====\n");
+        printf("%s", $1.code);
+    }
     ;
 
 lista_comandos
@@ -211,24 +214,67 @@ bloco
 
 comando_if
  /* Resolve a ambiguidade do Dangling Else */
-    : IF LPAREN expressao RPAREN comando %prec LOWER_THAN_ELSE
-    | IF LPAREN expressao RPAREN comando ELSE comando
+    : IF LPAREN expressao RPAREN comando %prec LOWER_THAN_ELSE {
+        char lbl_fim[64];
+        gerar_label(lbl_fim);
+        if ($3.tipo == TIPO_VOID) {
+            erro_semantico("Condicao do if deve ser numerica");
+        }
+        
+        snprintf($$.code, MAX_CODE, 
+        "%s \tifFalse %s goto %s\n %s%s:\n",
+        $3.code, $3.place, lbl_fim, $5.code, lbl_fim);
+    }
+    | IF LPAREN expressao RPAREN comando ELSE comando {
+        char lbl_else[64];
+        char lbl_fim[64];
+
+        gerar_label(lbl_else);
+        gerar_label(lbl_fim);
+        if ($3.tipo == TIPO_VOID) {
+            erro_semantico("Condicao do if/else deve ser numerica");
+        }
+
+        snprintf($$.code, MAX_CODE, 
+        "%s \tifFalse %s goto %s\n %s \tgoto %s\n %s:\n %s%s:\n",
+        $3.code, $3.place, lbl_else, $5.code, lbl_fim, lbl_else, $7.code, lbl_fim);
+    } 
     ;
 
 comando_while
-    : WHILE LPAREN expressao RPAREN comando
+    : WHILE LPAREN expressao RPAREN comando {
+        char lbl_inicio[64];
+        char lbl_fim[64];
+
+        gerar_label(lbl_inicio);
+        gerar_label(lbl_fim);
+
+        if ($3.tipo == TIPO_VOID) {
+            erro_semantico("Condicao do while deve ser numerica");
+        }
+
+        snprintf($$.code, MAX_CODE,
+                "%s:\n %s \tifFalse %s goto %s\n %s \tgoto %s\n%s:\n",
+                lbl_inicio, $3.code, $3.place, lbl_fim, $5.code, lbl_inicio, lbl_fim);
+    }
     ;
 
  /* Tipos suportados pela linguagem */
 tipo
-    : INT   { $$ = TIPO_INT; }
-    | FLOAT { $$ = TIPO_FLOAT; }
+    : INT {
+        tipo_atual = TIPO_INT;
+        $$ = TIPO_INT;
+    }
+    | FLOAT {
+        tipo_atual = TIPO_FLOAT;
+        $$ = TIPO_FLOAT;
+    }
     ;
 
  /* Declaracao de variaveis apenas */
 declaracao
-    : tipo { tipo_atual = $1; } lista_decl_itens {
-        strncpy($$.code, $3.code, MAX_CODE - 1);
+    : tipo lista_decl_itens {
+        strncpy($$.code, $2.code, MAX_CODE - 1);
         $$.code[MAX_CODE - 1] = '\0';
     }
     ;
