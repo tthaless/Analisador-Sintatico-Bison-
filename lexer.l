@@ -47,7 +47,7 @@ OTHER           .
 "print"         { return PRINT; }
 "return"        { return RETURN; }
 
-/* Identificadores */
+  /* Identificadores */
 {ID}      { strcpy(yylval.str, yytext); return ID; }
 {DECIMAL} { strcpy(yylval.str, yytext); return NUM_DEC; }
 {INTEIRO} { strcpy(yylval.str, yytext); return NUM_INT; }

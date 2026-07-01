@@ -12,7 +12,6 @@ void yyerror(const char *s);
 int yylex(void);
 
 #define HASH_SIZE 1024
-#define MAX_CODE 4096
 #define MAX_PARAMS 16
 
 /* --- Constantes de Tipos e Categorias --- */
@@ -65,6 +64,9 @@ int args_buffer_count = 0;
 %}
 
  /* Tokens */
+%code requires {
+#define MAX_CODE 4096
+}
 
 %union {
     char str[64];
@@ -252,27 +254,55 @@ decl_item
         if (inserir_simbolo($1, tipo_atual, SYM_VAR) == NULL) {
             erro_semantico("Variavel redeclarada no mesmo escopo");
         }
-        $$.code[0] = '\0';
+
+        char cod_expr[MAX_CODE];
+        char place_expr[64];
+        strncpy(cod_expr, $3.code, MAX_CODE - 1); cod_expr[MAX_CODE - 1] = '\0';
+        strncpy(place_expr, $3.place, 63); place_expr[63] = '\0';
+
+        if (tipo_atual != $3.tipo) {
+            if (tipo_atual == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+                char tmp[64];
+                gerar_temp(tmp);
+                snprintf(cod_expr + strlen(cod_expr), MAX_CODE - strlen(cod_expr),
+                         "\t%s = (float)%s\n", tmp, place_expr);
+                strncpy(place_expr, tmp, 63); place_expr[63] = '\0';
+            } else {
+                erro_semantico("Tipo incompativel na inicializacao da variavel");
+            }
+        }
+
+        snprintf($$.code, MAX_CODE, "%s\t%s = %s\n", cod_expr, $1, place_expr);
     }
     ;
 
  /* Atribuicao simples */
+
 atribuicao
     : ID ASSIGN expressao {
         Simbolo *s = buscar_simbolo($1);
+        char cod_expr[MAX_CODE];
+        char place_expr[64];
+        strncpy(cod_expr, $3.code, MAX_CODE - 1); cod_expr[MAX_CODE - 1] = '\0';
+        strncpy(place_expr, $3.place, 63); place_expr[63] = '\0';
+
         if (!s) {
             erro_semantico("Variavel nao declarada");
         } else if (s->tipo != $3.tipo) {
-            if (!(s->tipo == TIPO_FLOAT && $3.tipo == TIPO_INT)) {
+            if (s->tipo == TIPO_FLOAT && $3.tipo == TIPO_INT) {
+                char tmp[64];
+                gerar_temp(tmp);
+                snprintf(cod_expr + strlen(cod_expr), MAX_CODE - strlen(cod_expr),
+                         "\t%s = (float)%s\n", tmp, place_expr);
+                strncpy(place_expr, tmp, 63); place_expr[63] = '\0';
+            } else {
                 erro_semantico("Tipos incompativeis na atribuicao");
             }
         }
-        /* IR da atribuicao a ser concluido na proxima etapa */
-        strncpy($$.code, $3.code, MAX_CODE - 1);
-        $$.code[MAX_CODE - 1] = '\0';
+
+        snprintf($$.code, MAX_CODE, "%s\t%s = %s\n", cod_expr, $1, place_expr);
     }
     ;
-
 expressao
     /* ── Aritméticas ── */
     : expressao PLUS expressao {
@@ -741,13 +771,18 @@ argumentos
 
 io_stmt
     : PRINT LPAREN expressao RPAREN SEMICOLON {
-        strncpy($$.code, $3.code, MAX_CODE - 1); $$.code[MAX_CODE - 1] = '\0';
+        snprintf($$.code, MAX_CODE, "%s\tprint %s\n", $3.code, $3.place);
     }
     | READ LPAREN ID RPAREN SEMICOLON {
-        $$.code[0] = '\0';
+        Simbolo *s = buscar_simbolo($3);
+        if (!s) {
+            erro_semantico("Variavel nao declarada");
+        } else if (s->categoria != SYM_VAR) {
+            erro_semantico("Identificador nao e uma variavel");
+        }
+        snprintf($$.code, MAX_CODE, "\tread %s\n", $3);
     }
     ;
-
 %%
 
 
